@@ -233,22 +233,207 @@ class ExecutionPublisherTest(test_utils.TfxTest):
             m, execution_id, contexts,
             {'examples': [standard_artifacts.Examples()]}, executor_output)
 
-  def testPublishSuccessExecutionFailPartialUpdate(self):
+  def testPublishSuccessExecutionMoreArtifactsInExecutorOutput(self):
+    # There is one artifact in the system provided output_dict, while there are
+    # two artifacts in executor output. We expect that two artifacts are
+    # published.
     with metadata.Metadata(connection_config=self._connection_config) as m:
       contexts = self._generate_contexts(m)
       execution_id = execution_publish_utils.register_execution(
           m, self._execution_type, contexts).id
-      executor_output = execution_result_pb2.ExecutorOutput()
-      executor_output.output_artifacts['examples'].artifacts.add()
 
-      with self.assertRaisesRegex(RuntimeError, 'Partially update an output'):
-        execution_publish_utils.publish_succeeded_execution(
-            m, execution_id, contexts, {
-                'examples': [
-                    standard_artifacts.Examples(),
-                    standard_artifacts.Examples()
-                ]
-            }, executor_output)
+      output_example = standard_artifacts.Examples()
+
+      executor_output = execution_result_pb2.ExecutorOutput()
+      output_key = 'examples'
+      text_format.Parse(
+          """
+          uri: 'examples_uri_1'
+          custom_properties {
+            key: 'prop'
+            value {int_value: 1}
+          }
+          """, executor_output.output_artifacts[output_key].artifacts.add())
+      text_format.Parse(
+          """
+          uri: 'examples_uri_2'
+          custom_properties {
+            key: 'prop'
+            value {int_value: 2}
+          }
+          """, executor_output.output_artifacts[output_key].artifacts.add())
+
+      execution_publish_utils.publish_succeeded_execution(
+          m, execution_id, contexts, {
+              output_key: [
+                  output_example
+              ]
+          }, executor_output)
+      [execution] = m.store.get_executions()
+      self.assertProtoPartiallyEquals(
+          """
+          id: 1
+          type_id: 3
+          last_known_state: COMPLETE
+          """,
+          execution,
+          ignored_fields=[
+              'create_time_since_epoch', 'last_update_time_since_epoch'
+          ])
+      artifacts = m.store.get_artifacts()
+      self.assertLen(artifacts, 2)
+      self.assertProtoPartiallyEquals(
+          """
+          id: 1
+          type_id: 4
+          state: LIVE
+          uri: 'examples_uri_1'
+          custom_properties {
+            key: 'prop'
+            value {int_value: 1}
+          }""",
+          artifacts[0],
+          ignored_fields=[
+              'create_time_since_epoch', 'last_update_time_since_epoch'
+          ])
+      self.assertProtoPartiallyEquals(
+          """
+          id: 2
+          type_id: 4
+          state: LIVE
+          uri: 'examples_uri_2'
+          custom_properties {
+            key: 'prop'
+            value {int_value: 2}
+          }""",
+          artifacts[1],
+          ignored_fields=[
+              'create_time_since_epoch', 'last_update_time_since_epoch'
+          ])
+      events = m.store.get_events_by_execution_ids([execution.id])
+      self.assertLen(events, 2)
+      self.assertProtoPartiallyEquals(
+          """
+          artifact_id: 1
+          execution_id: 1
+          path {
+            steps {
+              key: 'examples'
+            }
+            steps {
+              index: 0
+            }
+          }
+          type: OUTPUT
+          """,
+          events[0],
+          ignored_fields=['milliseconds_since_epoch'])
+      self.assertProtoPartiallyEquals(
+          """
+          artifact_id: 2
+          execution_id: 1
+          path {
+            steps {
+              key: 'examples'
+            }
+            steps {
+              index: 1
+            }
+          }
+          type: OUTPUT
+          """,
+          events[1],
+          ignored_fields=['milliseconds_since_epoch'])
+      # Verifies the context-execution edges are set up.
+      self.assertCountEqual(
+          [c.id for c in contexts],
+          [c.id for c in m.store.get_contexts_by_execution(execution.id)])
+      self.assertCountEqual(
+          [c.id for c in contexts],
+          [c.id for c in m.store.get_contexts_by_artifact(output_example.id)])
+
+  def testPublishSuccessExecutionLessArtifactsInExecutorOutput(self):
+    # There are two artifacts in the system provided output_dict, while there is
+    # one artifacts in executor output. We expect that one artifact is
+    # published.
+    with metadata.Metadata(connection_config=self._connection_config) as m:
+      contexts = self._generate_contexts(m)
+      execution_id = execution_publish_utils.register_execution(
+          m, self._execution_type, contexts).id
+
+      output_example = standard_artifacts.Examples()
+      output_example_ignored = standard_artifacts.Examples()
+
+      executor_output = execution_result_pb2.ExecutorOutput()
+      output_key = 'examples'
+      text_format.Parse(
+          """
+          uri: 'examples_uri_1'
+          custom_properties {
+            key: 'prop'
+            value {int_value: 1}
+          }
+          """, executor_output.output_artifacts[output_key].artifacts.add())
+
+      execution_publish_utils.publish_succeeded_execution(
+          m, execution_id, contexts, {
+              output_key: [
+                  output_example,
+                  output_example_ignored
+              ]
+          }, executor_output)
+      [execution] = m.store.get_executions()
+      self.assertProtoPartiallyEquals(
+          """
+          id: 1
+          type_id: 3
+          last_known_state: COMPLETE
+          """,
+          execution,
+          ignored_fields=[
+              'create_time_since_epoch', 'last_update_time_since_epoch'
+          ])
+      artifacts = m.store.get_artifacts()
+      self.assertLen(artifacts, 1)
+      self.assertProtoPartiallyEquals(
+          """
+          id: 1
+          type_id: 4
+          state: LIVE
+          uri: 'examples_uri_1'
+          custom_properties {
+            key: 'prop'
+            value {int_value: 1}
+          }""",
+          artifacts[0],
+          ignored_fields=[
+              'create_time_since_epoch', 'last_update_time_since_epoch'
+          ])
+      events = m.store.get_events_by_execution_ids([execution.id])
+      self.assertLen(events, 1)
+      self.assertProtoPartiallyEquals(
+          """
+          artifact_id: 1
+          execution_id: 1
+          path {
+            steps {
+              key: 'examples'
+            }
+            steps {
+              index: 0
+            }
+          }
+          type: OUTPUT
+          """,
+          events[0],
+          ignored_fields=['milliseconds_since_epoch'])
+      # Verifies the context-execution edges are set up.
+      self.assertCountEqual(
+          [c.id for c in contexts],
+          [c.id for c in m.store.get_contexts_by_execution(execution.id)])
+      self.assertCountEqual(
+          [c.id for c in contexts],
+          [c.id for c in m.store.get_contexts_by_artifact(output_example.id)])
 
   def testPublishSuccessExecutionFailChangedType(self):
     with metadata.Metadata(connection_config=self._connection_config) as m:

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Portable library for registering and publishing executions."""
-from typing import Mapping, MutableMapping, Optional, Sequence
+from typing import Mapping, MutableMapping, Optional, Sequence, 
 
 from tfx import types
 from tfx.orchestration import metadata
@@ -53,8 +53,8 @@ def publish_succeeded_execution(
     metadata_handler: metadata.Metadata,
     execution_id: int,
     contexts: Sequence[metadata_store_pb2.Context],
-    output_artifacts: Optional[MutableMapping[str,
-                                              Sequence[types.Artifact]]] = None,
+    output_artifacts: Optional[MutableMapping[
+        str, MutableSequence[types.Artifact]]] = None,
     executor_output: Optional[execution_result_pb2.ExecutorOutput] = None
 ) -> None:
   """Marks an existing execution as success.
@@ -93,14 +93,31 @@ def publish_succeeded_execution(
       if key not in executor_output.output_artifacts:
         continue
       updated_artifact_list = executor_output.output_artifacts[key].artifacts
-      if len(artifact_list) != len(updated_artifact_list):
-        raise RuntimeError(
-            'Partially update an output channel is not supported')
 
-      for original, updated in zip(artifact_list, updated_artifact_list):
+      overlap_num = min(len(artifact_list), len(updated_artifact_list))
+      for i in range(overlap_num):
+        original = artifact_list[i]
+        updated = updated_artifact_list[i]
         if original.type_id != updated.type_id:
           raise RuntimeError('Executor output should not change artifact type.')
         original.mlmd_artifact.CopyFrom(updated)
+      if len(updated_artifact_list) < len(artifact_list):
+        # If there are less items in executor output than in the system
+        # generated output_artifacts, cap the system generated output_artifacts
+        artifact_list[:] = artifact_list[:overlap_num]
+      elif len(updated_artifact_list) > len(artifact_list):
+        # If there are more items in executor output than in the system
+        # generated output_artifacts, append the extra to the system generated
+        # output_artifacts
+
+        # We assume the origial output dict must include at least one output
+        # artifact.
+        artifact_type = artifact_list[0].artifact_type
+        for i in range(overlap_num, len(updated_artifact_list)):
+          proto_artifact = updated_artifact_list[i]
+          python_artifact = types.Artifact(artifact_type)
+          python_artifact.set_mlmd_artifact(proto_artifact)
+          artifact_list.append(python_artifact)
 
   # Marks output artifacts as LIVE.
   for artifact_list in output_artifacts.values():
