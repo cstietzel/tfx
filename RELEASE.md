@@ -5,6 +5,11 @@
     support for pipeline operations.
 *   Added an experimental template to use with Kubeflow V2 runner.
 *   Added sanitization of user-specified pipeline name in Kubeflow V2 runner.
+*   Added native TF 2 implementation of Transform. The default
+    behavior will continue to use Tensorflow's compat.v1 APIs. This can be
+    overriden by passing `force_tf_compat_v1=False`. The default
+    behavior for TF 2 users will be switched to the new native implementation in
+    a future release.
 
 ## Breaking changes
 
