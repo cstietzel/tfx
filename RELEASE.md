@@ -5,6 +5,7 @@
     support for pipeline operations.
 *   Added an experimental template to use with Kubeflow V2 runner.
 *   Added sanitization of user-specified pipeline name in Kubeflow V2 runner.
+*   Added support for invoking stats_options_updater_fn for Transform.
 
 ## Breaking changes
 
