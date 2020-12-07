@@ -26,6 +26,7 @@
 
 ## Bug fixes and other changes
 *  Depends on 'keras-tuner>=1,<1.0.2'.
+*  Depends on 'kfp-pipeline-spec>=0.1.3,<0.2'.
 
 ## Documentation updates
 

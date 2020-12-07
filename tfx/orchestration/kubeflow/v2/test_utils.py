@@ -657,6 +657,9 @@ def tasks_for_pipeline_with_artifact_value_passing():
 class BaseKubeflowV2Test(tf.test.TestCase):
   """Defines testing harness for pipeline on KubeflowV2DagRunner."""
 
+  # The following environment variables need to be set prior to calling the test
+  # in this file. All variables are required and do not have a default.
+
   # The src path to use to build docker image
   _REPO_BASE = os.environ.get('KFP_E2E_SRC')
 
