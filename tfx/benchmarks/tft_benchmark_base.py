@@ -29,6 +29,7 @@ import apache_beam as beam
 import tensorflow as tf
 import tensorflow_transform as tft
 from tensorflow_transform import graph_tools
+from tensorflow_transform import impl_helper
 import tensorflow_transform.beam as tft_beam
 from tensorflow_transform.beam import impl as tft_beam_impl
 from tensorflow_transform.saved import saved_transform_io
@@ -38,9 +39,6 @@ import tfx
 from tfx.benchmarks import benchmark_utils
 from tfx.benchmarks import benchmark_base
 from tfx_bsl.beam import shared
-from tfx_bsl.coders import example_coder
-from tfx_bsl.tfxio import tensor_adapter
-from tfx_bsl.tfxio import tf_example_record
 
 
 class _CopySavedModel(beam.PTransform):
@@ -69,7 +67,7 @@ class _AnalyzeAndTransformDataset(beam.PTransform):
 
   def __init__(self,
                dataset,
-               tfxio,
+               tf_metadata_schema,
                preprocessing_fn,
                transform_input_dataset_metadata,
                generate_dataset=False):
@@ -77,7 +75,7 @@ class _AnalyzeAndTransformDataset(beam.PTransform):
 
     Args:
       dataset: BenchmarkDataset object.
-      tfxio: A `tfx_bsl.TFXIO` instance.
+      tf_metadata_schema: tf.Metadata schema.
       preprocessing_fn: preprocessing_fn.
       transform_input_dataset_metadata: dataset_metadata.DatasetMetadata.
       generate_dataset: If True, generates the raw dataset and appropriate
@@ -85,7 +83,7 @@ class _AnalyzeAndTransformDataset(beam.PTransform):
         other benchmarks.
     """
     self._dataset = dataset
-    self._tfxio = tfxio
+    self._tf_metadata_schema = tf_metadata_schema
     self._preprocessing_fn = preprocessing_fn
     self._transform_input_dataset_metadata = transform_input_dataset_metadata
     self._generate_dataset = generate_dataset
@@ -95,13 +93,14 @@ class _AnalyzeAndTransformDataset(beam.PTransform):
     # configurable to test more variants (e.g. with and without deep-copy
     # optimisation, with and without cache, etc).
     with tft_beam.Context(temp_dir=tempfile.mkdtemp()):
+      converter = tft.coders.ExampleProtoCoder(
+          self._tf_metadata_schema, serialized=False)
       raw_data = (
           pipeline
-          | "ReadDataset" >> beam.Create(
-              self._dataset.read_raw_dataset(deserialize=False))
-          | "Decode" >> self._tfxio.BeamSource())
+          | "ReadDataset" >> beam.Create(self._dataset.read_raw_dataset())
+          | "Decode" >> beam.Map(converter.decode))
       transform_fn, output_metadata = (
-          (raw_data, self._tfxio.TensorAdapterConfig())
+          (raw_data, self._transform_input_dataset_metadata)
           | "AnalyzeDataset" >> tft_beam.AnalyzeDataset(self._preprocessing_fn))
 
       if self._generate_dataset:
@@ -109,7 +108,7 @@ class _AnalyzeAndTransformDataset(beam.PTransform):
             dest_path=self._dataset.tft_saved_model_path())
 
       (transformed_dataset, transformed_metadata) = (
-          ((raw_data, self._tfxio.TensorAdapterConfig()),
+          ((raw_data, self._transform_input_dataset_metadata),
            (transform_fn, output_metadata))
           | "TransformDataset" >> tft_beam.TransformDataset())
       return transformed_dataset, transformed_metadata
@@ -117,10 +116,7 @@ class _AnalyzeAndTransformDataset(beam.PTransform):
 
 # Tuple for variables common to all benchmarks.
 CommonVariablesTuple = collections.namedtuple("CommonVariablesTuple", [
-    "tf_metadata_schema",
-    "preprocessing_fn",
-    "transform_input_dataset_metadata",
-    "tfxio",
+    "tf_metadata_schema", "preprocessing_fn", "transform_input_dataset_metadata"
 ])
 
 
@@ -140,16 +136,11 @@ def _get_common_variables(dataset):
       schema_utils.schema_from_feature_spec({
           feature: feature_spec[feature] for feature in transform_input_columns
       }))
-  tfxio = tf_example_record.TFExampleBeamRecord(
-      physical_format="tfexamples",
-      schema=transform_input_dataset_metadata.schema,
-      telemetry_descriptors=["TFTransformBenchmark"])
 
   return CommonVariablesTuple(
       tf_metadata_schema=tf_metadata_schema,
       preprocessing_fn=preprocessing_fn,
-      transform_input_dataset_metadata=transform_input_dataset_metadata,
-      tfxio=tfxio)
+      transform_input_dataset_metadata=transform_input_dataset_metadata)
 
 
 def regenerate_intermediates_for_dataset(dataset):
@@ -161,7 +152,7 @@ def regenerate_intermediates_for_dataset(dataset):
   with beam.Pipeline() as p:
     _ = p | _AnalyzeAndTransformDataset(
         dataset,
-        common_variables.tfxio,
+        common_variables.tf_metadata_schema,
         common_variables.preprocessing_fn,
         common_variables.transform_input_dataset_metadata,
         generate_dataset=True)
@@ -180,13 +171,10 @@ def _get_batched_records(dataset):
   """
   batch_size = 1000
   common_variables = _get_common_variables(dataset)
-  converter = example_coder.ExamplesToRecordBatchDecoder(
-      common_variables.transform_input_dataset_metadata.schema
-      .SerializeToString())
-  serialized_records = benchmark_utils.batched_iterator(
-      dataset.read_raw_dataset(deserialize=False), batch_size)
-  records = [converter.DecodeBatch(x) for x in serialized_records]
-  return batch_size, records
+  converter = tft.coders.ExampleProtoCoder(
+      common_variables.tf_metadata_schema, serialized=False)
+  records = [converter.decode(x) for x in dataset.read_raw_dataset()]
+  return batch_size, benchmark_utils.batched_iterator(records, batch_size)
 
 
 class TFTBenchmarkBase(benchmark_base.BenchmarkBase):
@@ -219,7 +207,7 @@ class TFTBenchmarkBase(benchmark_base.BenchmarkBase):
 
     pipeline = self._create_beam_pipeline()
     _ = pipeline | _AnalyzeAndTransformDataset(
-        self._dataset, common_variables.tfxio,
+        self._dataset, common_variables.tf_metadata_schema,
         common_variables.preprocessing_fn,
         common_variables.transform_input_dataset_metadata)
     start = time.time()
@@ -241,16 +229,14 @@ class TFTBenchmarkBase(benchmark_base.BenchmarkBase):
     """
     common_variables = _get_common_variables(self._dataset)
     batch_size, batched_records = _get_batched_records(self._dataset)
+
     fn = tft_beam_impl._RunMetaGraphDoFn(  # pylint: disable=protected-access
+        input_schema=common_variables.transform_input_dataset_metadata.schema,
         tf_config=None,
         shared_graph_state_handle=shared.Shared(),
         passthrough_keys=set(),
         exclude_outputs=None,
-        # TODO(b/149997088): Add a benchmark with use_tf_compat_v1=False.
-        use_tf_compat_v1=True,
-        input_tensor_adapter_config=common_variables.tfxio.TensorAdapterConfig(
-        ))
-    fn.setup()
+        use_tfxio=False)
 
     start = time.time()
     for batch in batched_records:
@@ -267,7 +253,6 @@ class TFTBenchmarkBase(benchmark_base.BenchmarkBase):
             "num_examples": self._dataset.num_examples()
         })
 
-  # TODO(b/149997088): Add a TF2 variant of this benchmark.
   def benchmarkRunMetagraphDoFnAtTFLevel(self):
     """Benchmark RunMetaGraphDoFn at the TF level.
 
@@ -280,8 +265,9 @@ class TFTBenchmarkBase(benchmark_base.BenchmarkBase):
     """
     common_variables = _get_common_variables(self._dataset)
     tf_config = tft_beam_impl._FIXED_PARALLELISM_TF_CONFIG  # pylint: disable=protected-access
+    input_schema = common_variables.transform_input_dataset_metadata.schema
 
-    # This block copied from _GraphStateCompatV1.__init__
+    # This block copied from _GraphState.__init__
     with tf.compat.v1.Graph().as_default() as graph:
       session = tf.compat.v1.Session(graph=graph, config=tf_config)
       with session.as_default():
@@ -301,15 +287,11 @@ class TFTBenchmarkBase(benchmark_base.BenchmarkBase):
 
     batch_size, batched_records = _get_batched_records(self._dataset)
 
-    input_tensor_adapter = tensor_adapter.TensorAdapter(
-        common_variables.tfxio.TensorAdapterConfig())
-
     # This block copied from _RunMetaGraphDoFn._handle_batch
     start = time.time()
     for batch in batched_records:
-      feed_by_name = input_tensor_adapter.ToBatchTensors(
-          batch, produce_eager_tensors=False)
-      feed_list = [feed_by_name[name] for name in input_tensor_keys]
+      feed_list = impl_helper.make_feed_list(input_tensor_keys, input_schema,
+                                             batch)
       outputs_list = callable_get_outputs(*feed_list)
       _ = {key: value for key, value in zip(outputs_tensor_keys, outputs_list)}
     end = time.time()

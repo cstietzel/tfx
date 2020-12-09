@@ -32,7 +32,8 @@ from tfx.examples.custom_components.presto_example_gen.proto import presto_confi
 from tfx.proto import example_gen_pb2
 from tfx.types import artifact_utils
 from tfx.types import standard_artifacts
-from tfx.utils import proto_utils
+
+from google.protobuf import json_format
 
 
 class _MockReadPrestoDoFn(beam.DoFn):
@@ -86,9 +87,13 @@ class ExecutorTest(tf.test.TestCase):
           pipeline | 'ToTFExample' >> executor._PrestoToExample(
               exec_properties={
                   'input_config':
-                      proto_utils.proto_to_json(example_gen_pb2.Input()),
+                      json_format.MessageToJson(
+                          example_gen_pb2.Input(),
+                          preserving_proto_field_name=True),
                   'custom_config':
-                      proto_utils.proto_to_json(example_gen_pb2.CustomConfig())
+                      json_format.MessageToJson(
+                          example_gen_pb2.CustomConfig(),
+                          preserving_proto_field_name=True)
               },
               split_pattern='SELECT i, f, s FROM `fake`'))
 
@@ -120,15 +125,16 @@ class ExecutorTest(tf.test.TestCase):
     # Create exe properties.
     exec_properties = {
         'input_config':
-            proto_utils.proto_to_json(
+            json_format.MessageToJson(
                 example_gen_pb2.Input(splits=[
                     example_gen_pb2.Input.Split(
                         name='bq', pattern='SELECT i, f, s FROM `fake`'),
-                ])),
+                ]),
+                preserving_proto_field_name=True),
         'custom_config':
-            proto_utils.proto_to_json(example_gen_pb2.CustomConfig()),
+            json_format.MessageToJson(example_gen_pb2.CustomConfig()),
         'output_config':
-            proto_utils.proto_to_json(
+            json_format.MessageToJson(
                 example_gen_pb2.Output(
                     split_config=example_gen_pb2.SplitConfig(splits=[
                         example_gen_pb2.SplitConfig.Split(

@@ -33,7 +33,7 @@ from tfx.types import artifact_utils
 from tfx.types import standard_artifacts
 from tfx.utils import io_utils
 from tfx.utils import path_utils
-from tfx.utils import proto_utils
+from google.protobuf import json_format
 
 
 class ExecutorTest(tf.test.TestCase):
@@ -88,9 +88,13 @@ class ExecutorTest(tf.test.TestCase):
     # Create exec properties skeleton.
     self._exec_properties = {
         'train_args':
-            proto_utils.proto_to_json(trainer_pb2.TrainArgs(num_steps=1000)),
+            json_format.MessageToJson(
+                trainer_pb2.TrainArgs(num_steps=1000),
+                preserving_proto_field_name=True),
         'eval_args':
-            proto_utils.proto_to_json(trainer_pb2.EvalArgs(num_steps=500)),
+            json_format.MessageToJson(
+                trainer_pb2.EvalArgs(num_steps=500),
+                preserving_proto_field_name=True),
         'warm_starting':
             False,
     }
@@ -205,10 +209,12 @@ class ExecutorTest(tf.test.TestCase):
     self._input_dict[constants.EXAMPLES_KEY] = [examples]
 
     # Update exec properties skeleton with custom splits.
-    self._exec_properties['train_args'] = proto_utils.proto_to_json(
-        trainer_pb2.TrainArgs(splits=['training'], num_steps=1000))
-    self._exec_properties['eval_args'] = proto_utils.proto_to_json(
-        trainer_pb2.EvalArgs(splits=['evaluating'], num_steps=500))
+    self._exec_properties['train_args'] = json_format.MessageToJson(
+        trainer_pb2.TrainArgs(splits=['training'], num_steps=1000),
+        preserving_proto_field_name=True)
+    self._exec_properties['eval_args'] = json_format.MessageToJson(
+        trainer_pb2.EvalArgs(splits=['evaluating'], num_steps=500),
+        preserving_proto_field_name=True)
 
     self._exec_properties['module_file'] = self._module_file
     self._do(self._trainer_executor)

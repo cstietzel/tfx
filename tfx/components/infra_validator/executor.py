@@ -38,9 +38,9 @@ from tfx.proto import infra_validator_pb2
 from tfx.types import artifact_utils
 from tfx.utils import io_utils
 from tfx.utils import path_utils
-from tfx.utils import proto_utils
 from tfx.utils.model_paths import tf_serving_flavor
 
+from google.protobuf import json_format
 
 _DEFAULT_NUM_TRIES = 5
 _DEFAULT_POLLING_INTERVAL_SEC = 1
@@ -161,14 +161,13 @@ class Executor(base_executor.BaseExecutor):
       examples = None
 
     serving_spec = infra_validator_pb2.ServingSpec()
-    proto_utils.json_to_proto(exec_properties[_SERVING_SPEC_KEY], serving_spec)
+    json_format.Parse(exec_properties[_SERVING_SPEC_KEY], serving_spec)
     if not serving_spec.model_name:
       serving_spec.model_name = _DEFAULT_MODEL_NAME
 
     validation_spec = infra_validator_pb2.ValidationSpec()
     if exec_properties.get(_VALIDATION_SPEC_KEY):
-      proto_utils.json_to_proto(exec_properties[_VALIDATION_SPEC_KEY],
-                                validation_spec)
+      json_format.Parse(exec_properties[_VALIDATION_SPEC_KEY], validation_spec)
     if not validation_spec.num_tries:
       validation_spec.num_tries = _DEFAULT_NUM_TRIES
     if not validation_spec.max_loading_time_seconds:
@@ -176,8 +175,7 @@ class Executor(base_executor.BaseExecutor):
 
     if exec_properties.get(_REQUEST_SPEC_KEY):
       request_spec = infra_validator_pb2.RequestSpec()
-      proto_utils.json_to_proto(exec_properties[_REQUEST_SPEC_KEY],
-                                request_spec)
+      json_format.Parse(exec_properties[_REQUEST_SPEC_KEY], request_spec)
     else:
       request_spec = None
 

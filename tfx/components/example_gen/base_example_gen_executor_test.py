@@ -28,7 +28,7 @@ from tfx.dsl.io import fileio
 from tfx.proto import example_gen_pb2
 from tfx.types import artifact_utils
 from tfx.types import standard_artifacts
-from tfx.utils import proto_utils
+from google.protobuf import json_format
 
 
 @beam.ptransform_fn
@@ -102,13 +102,14 @@ class BaseExampleGenExecutorTest(tf.test.TestCase):
     # Create exec proterties for output splits.
     self._exec_properties = {
         utils.INPUT_CONFIG_KEY:
-            proto_utils.proto_to_json(
+            json_format.MessageToJson(
                 example_gen_pb2.Input(splits=[
                     example_gen_pb2.Input.Split(
                         name='single', pattern='single/*'),
-                ])),
+                ]),
+                preserving_proto_field_name=True),
         utils.OUTPUT_CONFIG_KEY:
-            proto_utils.proto_to_json(
+            json_format.MessageToJson(
                 example_gen_pb2.Output(
                     split_config=example_gen_pb2.SplitConfig(splits=[
                         example_gen_pb2.SplitConfig.Split(
@@ -140,14 +141,16 @@ class BaseExampleGenExecutorTest(tf.test.TestCase):
     # Create exec proterties for input split.
     self._exec_properties = {
         utils.INPUT_CONFIG_KEY:
-            proto_utils.proto_to_json(
+            json_format.MessageToJson(
                 example_gen_pb2.Input(splits=[
                     example_gen_pb2.Input.Split(
                         name='train', pattern='train/*'),
                     example_gen_pb2.Input.Split(name='eval', pattern='eval/*')
-                ])),
+                ]),
+                preserving_proto_field_name=True),
         utils.OUTPUT_CONFIG_KEY:
-            proto_utils.proto_to_json(example_gen_pb2.Output())
+            json_format.MessageToJson(
+                example_gen_pb2.Output(), preserving_proto_field_name=True)
     }
 
     self._testDo()
@@ -168,7 +171,7 @@ class BaseExampleGenExecutorTest(tf.test.TestCase):
     self._testDo()
 
   def _testFeatureBasedPartition(self, partition_feature_name):
-    self._exec_properties[utils.OUTPUT_CONFIG_KEY] = proto_utils.proto_to_json(
+    self._exec_properties[utils.OUTPUT_CONFIG_KEY] = json_format.MessageToJson(
         example_gen_pb2.Output(
             split_config=example_gen_pb2.SplitConfig(
                 splits=[

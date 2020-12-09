@@ -33,7 +33,8 @@ from tfx.types import artifact_utils
 from tfx.types import channel_utils
 from tfx.types import standard_artifacts
 from tfx.utils import io_utils
-from tfx.utils import proto_utils
+
+from google.protobuf import json_format
 
 
 class DriverTest(tf.test.TestCase):
@@ -59,7 +60,7 @@ class DriverTest(tf.test.TestCase):
         utils.INPUT_BASE_KEY:
             self._input_base_path,
         utils.INPUT_CONFIG_KEY:
-            proto_utils.proto_to_json(
+            json_format.MessageToJson(
                 example_gen_pb2.Input(splits=[
                     example_gen_pb2.Input.Split(
                         name='s1',
@@ -67,7 +68,8 @@ class DriverTest(tf.test.TestCase):
                     example_gen_pb2.Input.Split(
                         name='s2',
                         pattern='span{SPAN}/version{VERSION}/split2/*')
-                ])),
+                ]),
+                preserving_proto_field_name=True),
         utils.RANGE_CONFIG_KEY:
             None,
     }
@@ -117,8 +119,8 @@ class DriverTest(tf.test.TestCase):
         r'split:s1,num_files:1,total_bytes:9,xor_checksum:.*,sum_checksum:.*\nsplit:s2,num_files:1,total_bytes:9,xor_checksum:.*,sum_checksum:.*'
     )
     updated_input_config = example_gen_pb2.Input()
-    proto_utils.json_to_proto(self._exec_properties[utils.INPUT_CONFIG_KEY],
-                              updated_input_config)
+    json_format.Parse(self._exec_properties[utils.INPUT_CONFIG_KEY],
+                      updated_input_config)
 
     # Check if latest span is selected.
     self.assertProtoEquals(
@@ -133,27 +135,30 @@ class DriverTest(tf.test.TestCase):
         }""", updated_input_config)
 
     # Test driver behavior using RangeConfig with static range.
-    self._exec_properties[utils.INPUT_CONFIG_KEY] = proto_utils.proto_to_json(
+    self._exec_properties[utils.INPUT_CONFIG_KEY] = json_format.MessageToJson(
         example_gen_pb2.Input(splits=[
             example_gen_pb2.Input.Split(
                 name='s1', pattern='span{SPAN:2}/version{VERSION}/split1/*'),
             example_gen_pb2.Input.Split(
                 name='s2', pattern='span{SPAN:2}/version{VERSION}/split2/*')
-        ]))
+        ]),
+        preserving_proto_field_name=True)
 
-    self._exec_properties[utils.RANGE_CONFIG_KEY] = proto_utils.proto_to_json(
+    self._exec_properties[utils.RANGE_CONFIG_KEY] = json_format.MessageToJson(
         range_config_pb2.RangeConfig(
             static_range=range_config_pb2.StaticRange(
-                start_span_number=1, end_span_number=2)))
+                start_span_number=1, end_span_number=2)),
+        preserving_proto_field_name=True)
     with self.assertRaisesRegexp(
         ValueError, 'Start and end span numbers for RangeConfig.static_range'):
       self._example_gen_driver.resolve_exec_properties(self._exec_properties,
                                                        None, None)
 
-    self._exec_properties[utils.RANGE_CONFIG_KEY] = proto_utils.proto_to_json(
+    self._exec_properties[utils.RANGE_CONFIG_KEY] = json_format.MessageToJson(
         range_config_pb2.RangeConfig(
             static_range=range_config_pb2.StaticRange(
-                start_span_number=1, end_span_number=1)))
+                start_span_number=1, end_span_number=1)),
+        preserving_proto_field_name=True)
     self._example_gen_driver.resolve_exec_properties(self._exec_properties,
                                                      None, None)
     self.assertEqual(self._exec_properties[utils.SPAN_PROPERTY_NAME], 1)
@@ -163,8 +168,8 @@ class DriverTest(tf.test.TestCase):
         r'split:s1,num_files:1,total_bytes:9,xor_checksum:.*,sum_checksum:.*\nsplit:s2,num_files:1,total_bytes:9,xor_checksum:.*,sum_checksum:.*'
     )
     updated_input_config = example_gen_pb2.Input()
-    proto_utils.json_to_proto(self._exec_properties[utils.INPUT_CONFIG_KEY],
-                              updated_input_config)
+    json_format.Parse(self._exec_properties[utils.INPUT_CONFIG_KEY],
+                      updated_input_config)
     # Check if correct span inside static range is selected.
     self.assertProtoEquals(
         """
@@ -235,13 +240,14 @@ class DriverTest(tf.test.TestCase):
         utils.INPUT_BASE_KEY:
             self._input_base_path,
         utils.INPUT_CONFIG_KEY:
-            proto_utils.proto_to_json(
+            json_format.MessageToJson(
                 example_gen_pb2.Input(splits=[
                     example_gen_pb2.Input.Split(
                         name='s1', pattern='span{SPAN}/split1/*'),
                     example_gen_pb2.Input.Split(
                         name='s2', pattern='span{SPAN}/split2/*')
-                ])),
+                ]),
+                preserving_proto_field_name=True),
     }
     result = ir_driver.run(
         portable_data_types.ExecutionInfo(
@@ -250,9 +256,8 @@ class DriverTest(tf.test.TestCase):
     exec_properties = result.exec_properties
     self.assertEqual(exec_properties[utils.SPAN_PROPERTY_NAME].int_value, 1)
     updated_input_config = example_gen_pb2.Input()
-    proto_utils.json_to_proto(
-        exec_properties[utils.INPUT_CONFIG_KEY].string_value,
-        updated_input_config)
+    json_format.Parse(exec_properties[utils.INPUT_CONFIG_KEY].string_value,
+                      updated_input_config)
     self.assertProtoEquals(
         """
         splits {

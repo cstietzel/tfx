@@ -27,7 +27,7 @@ from tfx.proto import transform_pb2
 from tfx.types import artifact_utils
 from tfx.types import channel_utils
 from tfx.types import standard_artifacts
-from tfx.utils import proto_utils
+from google.protobuf import json_format
 
 
 class ComponentTest(tf.test.TestCase):
@@ -150,7 +150,8 @@ class ComponentTest(tf.test.TestCase):
     )
     self._verify_outputs(transform)
     self.assertEqual(
-        proto_utils.proto_to_json(splits_config),
+        json_format.MessageToJson(
+            splits_config, sort_keys=True, preserving_proto_field_name=True),
         transform.exec_properties['splits_config'])
 
   def test_construct_with_materialization_disabled_but_output_examples(self):

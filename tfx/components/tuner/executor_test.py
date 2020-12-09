@@ -32,7 +32,7 @@ from tfx.proto import tuner_pb2
 from tfx.types import artifact_utils
 from tfx.types import standard_artifacts
 from tfx.utils import io_utils
-from tfx.utils import proto_utils
+from google.protobuf import json_format
 from tensorflow.python.lib.io import file_io  # pylint: disable=g-direct-tensorflow-import
 
 
@@ -78,9 +78,13 @@ class ExecutorTest(tf.test.TestCase):
     # Create exec properties.
     self._exec_properties = {
         'train_args':
-            proto_utils.proto_to_json(trainer_pb2.TrainArgs(num_steps=100)),
+            json_format.MessageToJson(
+                trainer_pb2.TrainArgs(num_steps=100),
+                preserving_proto_field_name=True),
         'eval_args':
-            proto_utils.proto_to_json(trainer_pb2.EvalArgs(num_steps=50)),
+            json_format.MessageToJson(
+                trainer_pb2.EvalArgs(num_steps=50),
+                preserving_proto_field_name=True),
     }
 
   def _verify_output(self):
@@ -121,8 +125,9 @@ class ExecutorTest(tf.test.TestCase):
 
   def testTuneArgs(self):
     with self.assertRaises(ValueError):
-      self._exec_properties['tune_args'] = proto_utils.proto_to_json(
-          tuner_pb2.TuneArgs(num_parallel_trials=3))
+      self._exec_properties['tune_args'] = json_format.MessageToJson(
+          tuner_pb2.TuneArgs(num_parallel_trials=3),
+          preserving_proto_field_name=True)
 
       tuner = executor.Executor(self._context)
       tuner.Do(
@@ -145,10 +150,12 @@ class ExecutorTest(tf.test.TestCase):
     self._input_dict['examples'] = [examples]
 
     # Update exec properties skeleton with custom splits.
-    self._exec_properties['train_args'] = proto_utils.proto_to_json(
-        trainer_pb2.TrainArgs(splits=['training'], num_steps=1000))
-    self._exec_properties['eval_args'] = proto_utils.proto_to_json(
-        trainer_pb2.EvalArgs(splits=['evaluating'], num_steps=500))
+    self._exec_properties['train_args'] = json_format.MessageToJson(
+        trainer_pb2.TrainArgs(splits=['training'], num_steps=1000),
+        preserving_proto_field_name=True)
+    self._exec_properties['eval_args'] = json_format.MessageToJson(
+        trainer_pb2.EvalArgs(splits=['evaluating'], num_steps=500),
+        preserving_proto_field_name=True)
     self._exec_properties['module_file'] = os.path.join(self._testdata_dir,
                                                         'module_file',
                                                         'tuner_module.py')
