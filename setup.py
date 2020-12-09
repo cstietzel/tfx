@@ -73,6 +73,21 @@ class _BdistWheelCommand(bdist_wheel.bdist_wheel):
     gen_proto.local_mlmd_repo = self.local_mlmd_repo
 
 
+class _UnsupportedDevBuildWheelCommand(_BdistWheelCommand):
+  """Disables build of 'tfx-dev' wheel files."""
+
+  def finalize_options(self):
+    if not os.environ.get('UNSUPPORTED_BUILD_TFX_DEV_WHEEL'):
+      raise Exception(
+          'Starting in version 0.26.0, pip package build for TFX has changed,'
+          'and `python setup.py bdist_wheel` can no longer be invoked '
+          'directly.\n\nFor instructions on how to build wheels for TFX, see '
+          'https://github.com/tensorflow/tfx/blob/master/package_build/'
+          'README.md.\n\nEditable pip installation for development is still '
+          'supported through `pip install -e`.')
+    super(_UnsupportedDevBuildWheelCommand, self).finalize_options()
+
+
 class _BuildCommand(build.build):
   """Build everything that is needed to install.
 
@@ -170,13 +185,6 @@ class _GenProtoCommand(setuptools.Command):
         env=os.environ)
 
 
-_TFX_DESCRIPTION = (
-    'TensorFlow Extended (TFX) is a TensorFlow-based general-purpose machine '
-    'learning platform implemented at Google.')
-_PIPELINES_SDK_DESCRIPTION = (
-    'A dependency-light distribution of the core pipeline authoring '
-    'functionality of TensorFlow Extended (TFX).')
-
 # Get the long descriptions from README files.
 with open('README.md') as fp:
   _TFX_LONG_DESCRIPTION = fp.read()
@@ -208,20 +216,19 @@ if package_config.PACKAGE_NAME == 'tfx-dev':
   # "tfx-pipeline-sdk" packages.
   install_requires = dependencies.make_required_install_packages()
   extras_require = tfx_extras_requires
-  description = _TFX_DESCRIPTION
   long_description = _TFX_LONG_DESCRIPTION
   packages = find_namespace_packages(include=['tfx', 'tfx.*'])
-  # TODO(b/174503231): Remove the override on the following line and prevent
-  # build of wheels from a monolithic "tfx" package.
-  package_name = 'tfx'
+  # Do not support wheel builds for "tfx-dev".
+  build_wheel_command = _UnsupportedDevBuildWheelCommand  # pylint: disable=invalid-name
 elif package_config.PACKAGE_NAME == 'ml-pipelines-sdk':
   # Core TFX pipeline authoring SDK, without dependency on component-specific
   # packages like "tensorflow" and "apache-beam".
   install_requires = dependencies.make_pipeline_sdk_required_install_packages()
   extras_require = {}
-  description = _PIPELINES_SDK_DESCRIPTION
   long_description = _PIPELINES_SDK_LONG_DESCRIPTION
   packages = find_namespace_packages(include=ml_pipelines_sdk_packages)
+  # Use the default pip wheel building command.
+  build_wheel_command = build.build  # pylint: disable=invalid-name
 elif package_config.PACKAGE_NAME == 'tfx':
   # Recommended installation package for TFX. This package builds on top of
   # the "ml-pipelines-sdk" pipeline authoring SDK package and adds first-party
@@ -230,10 +237,11 @@ elif package_config.PACKAGE_NAME == 'tfx':
       ['ml-pipelines-sdk==%s' % version.__version__] +
       dependencies.make_required_install_packages())
   extras_require = tfx_extras_requires
-  description = _TFX_DESCRIPTION
   long_description = _TFX_LONG_DESCRIPTION
   packages = find_namespace_packages(
       include=['tfx', 'tfx.*'], exclude=ml_pipelines_sdk_packages)
+  # Use the pip wheel building command that includes proto generation.
+  build_wheel_command = _BdistWheelCommand  # pylint: disable=invalid-name
 else:
   raise ValueError('Invalid package config: %r.' % package_config.PACKAGE_NAME)
 
@@ -278,7 +286,7 @@ setup(
         'clikit>=0.4.3,<0.5',  # Required for ResolveDeps command.
     ],
     cmdclass={
-        'bdist_wheel': _BdistWheelCommand,
+        'bdist_wheel': build_wheel_command,
         'build': _BuildCommand,
         'develop': _DevelopCommand,
         'gen_proto': _GenProtoCommand,
@@ -287,7 +295,7 @@ setup(
     python_requires='>=3.6,<3.9',
     packages=packages,
     include_package_data=True,
-    description=description,
+    description='TensorFlow Extended (TFX) is a TensorFlow-based general-purpose machine learning platform implemented at Google',
     long_description=long_description,
     long_description_content_type='text/markdown',
     keywords='tensorflow tfx',
