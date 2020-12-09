@@ -44,9 +44,6 @@ class BulkInferrerSpec(ComponentSpec):
           ExecutionParameter(type=bulk_inferrer_pb2.ModelSpec, optional=True),
       'data_spec':
           ExecutionParameter(type=bulk_inferrer_pb2.DataSpec, optional=True),
-      'output_example_spec':
-          ExecutionParameter(
-              type=bulk_inferrer_pb2.OutputExampleSpec, optional=True),
   }
   INPUTS = {
       'examples':
@@ -59,10 +56,7 @@ class BulkInferrerSpec(ComponentSpec):
   }
   OUTPUTS = {
       'inference_result':
-          ChannelParameter(
-              type=standard_artifacts.InferenceResult, optional=True),
-      'output_examples':
-          ChannelParameter(type=standard_artifacts.Examples, optional=True),
+          ChannelParameter(type=standard_artifacts.InferenceResult),
   }
 
 

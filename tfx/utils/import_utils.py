@@ -47,21 +47,26 @@ def import_func_from_source(source_path: Text, fn_name: Text) -> Callable:  # py
   # because importlib can't import from GCS
   source_path = io_utils.ensure_local(source_path)
 
-  try:
-    loader = importlib.machinery.SourceFileLoader(
-        fullname='user_module',
-        path=source_path,
-    )
-    spec = importlib.util.spec_from_loader(
-        loader.name, loader, origin=source_path)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[loader.name] = module
-    loader.exec_module(module)
-    return getattr(module, fn_name)
+  if not hasattr(import_func_from_source, 'modules'):
+    import_func_from_source.modules = {}
 
-  except IOError:
-    raise ImportError('{} in {} not found in import_func_from_source()'.format(
-        fn_name, source_path))
+  if source_path not in import_func_from_source.modules:
+    try:
+      loader = importlib.machinery.SourceFileLoader(
+          fullname='user_module',
+          path=source_path,
+      )
+      spec = importlib.util.spec_from_loader(
+          loader.name, loader, origin=source_path)
+      module = importlib.util.module_from_spec(spec)
+      sys.modules[loader.name] = module
+      loader.exec_module(module)
+      import_func_from_source.modules[source_path] = module
+    except IOError:
+      raise ImportError('{} in {} not found in '
+                        'import_func_from_source()'.format(
+                            fn_name, source_path))
+  return getattr(import_func_from_source.modules[source_path], fn_name)
 
 
 def import_func_from_module(module_path: Text, fn_name: Text) -> Callable:  # pylint: disable=g-bare-generic

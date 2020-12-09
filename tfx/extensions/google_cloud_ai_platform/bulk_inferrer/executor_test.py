@@ -117,7 +117,6 @@ class ExecutorTest(tf.test.TestCase):
     inference_endpoint.ai_platform_prediction_model_spec.CopyFrom(
         ai_platform_prediction_model_spec)
     mock_run_model_inference.assert_called_once_with(mock.ANY, mock.ANY,
-                                                     mock.ANY, mock.ANY,
                                                      mock.ANY,
                                                      inference_endpoint)
     executor_class_path = '%s.%s' % (bulk_inferrer.__class__.__module__,
@@ -183,7 +182,6 @@ class ExecutorTest(tf.test.TestCase):
     inference_endpoint.ai_platform_prediction_model_spec.CopyFrom(
         ai_platform_prediction_model_spec)
     mock_run_model_inference.assert_called_once_with(mock.ANY, mock.ANY,
-                                                     mock.ANY, mock.ANY,
                                                      mock.ANY,
                                                      inference_endpoint)
     executor_class_path = '%s.%s' % (bulk_inferrer.__class__.__module__,
